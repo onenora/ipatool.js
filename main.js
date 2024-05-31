@@ -1,3 +1,5 @@
+// 引入 suppressWarnings.js 以忽略特定的警告
+import './suppressWarnings.js';
 import {IPATool} from './src/ipa.js';
 const ipaTool = new IPATool();
 
@@ -8,7 +10,7 @@ await ipaTool.downipa({
     path: './app',
 
     // 微信：414478124//你想要下载的应用程序的ID
-    APPID: '1215494034',
+    APPID: '1662413517',
 
     //微信8.0.48:864225682 //版本id,下载旧版本需要填写,留空默认下新版本
     appVerId: '',

@@ -50,7 +50,7 @@ async function clearCache(cacheDir) {
 
 export class IPATool {
     async downipa({ path: downloadPath, APPLE_ID, PASSWORD, CODE, APPID, appVerId } = {}) {
-        downloadPath = downloadPath || '.'
+        downloadPath = downloadPath || '.';
 
         console.log('------准备登录------');
 
@@ -141,7 +141,7 @@ export class IPATool {
         await sigClient.write();
         console.log('授权完成');
 
-// 删除缓存文件夹
-        await fsPromises.rmdir(cacheDir);
+        // 删除缓存文件夹
+        await fsPromises.rm(cacheDir, { recursive: true, force: true });
     }
 }
