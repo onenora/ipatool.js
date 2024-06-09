@@ -1,8 +1,10 @@
 import { promises as fsPromises, createWriteStream, createReadStream } from 'fs';
 import path from 'path';
 import fetch from 'node-fetch';
+import crypto from 'crypto';
 import { Store } from './client.js';
 import { SignatureClient } from './Signature.js';
+import chalk from 'chalk';
 
 const CHUNK_SIZE = 5 * 1024 * 1024; // 每个块的大小为5MB
 const MAX_CONCURRENT_DOWNLOADS = 10; // 限制同时下载的分块数量
@@ -23,9 +25,16 @@ async function downloadChunk({ url, start, end, output }) {
                 response.body.on('error', reject);
                 fileStream.on('finish', resolve);
             });
+
+            // 验证块大小
+            const { size } = await fsPromises.stat(output);
+            if (size !== end - start + 1) {
+                throw new Error(`块大小不匹配，预期大小：${end - start + 1}，实际大小：${size}`);
+            }
+
             return;
         } catch (error) {
-            console.error(`下载块失败: ${error.message}, 尝试重试 ${attempt + 1}/${MAX_RETRIES}`);
+            console.error(chalk.red(`下载块失败: ${error.message}, 尝试重试 ${attempt + 1}/${MAX_RETRIES}`));
             if (attempt < MAX_RETRIES - 1) {
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
             } else {
@@ -43,32 +52,43 @@ async function clearCache(cacheDir) {
         }
     } catch (error) {
         if (error.code !== 'ENOENT') {
-            console.error(`无法清理缓存文件夹: ${error.message}`);
+            console.error(chalk.red(`无法清理缓存文件夹: ${error.message}`));
         }
     }
+}
+
+async function calculateChecksum(filePath) {
+    const hash = crypto.createHash('sha256');
+    const stream = createReadStream(filePath);
+    return new Promise((resolve, reject) => {
+        stream.on('data', data => hash.update(data));
+        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('error', reject);
+    });
 }
 
 export class IPATool {
     async downipa({ path: downloadPath, APPLE_ID, PASSWORD, CODE, APPID, appVerId } = {}) {
         downloadPath = downloadPath || '.';
 
-        console.log('------准备登录------');
+        console.log(chalk.blue('------准备登录------'));
 
         const user = await Store.authenticate(APPLE_ID, PASSWORD, CODE);
         if (user._state !== 'success') {
-            console.log(`登录失败：${user.customerMessage}`);
+            console.log(chalk.red(`登录失败：${user.customerMessage}`));
             return;
         }
-        console.log(`登录结果: ${user.accountInfo.address.firstName} ${user.accountInfo.address.lastName}`);
+        console.log(chalk.green(`登录结果: ${user.accountInfo.address.firstName} ${user.accountInfo.address.lastName}`));
 
-        console.log('------查询APP信息------');
+        console.log(chalk.blue('------查询APP信息------'));
         const app = await Store.download(APPID, appVerId, user); // 第三个参数传递Cookie信息
         if (app._state !== 'success') {
-            console.log(`查询失败：${app.customerMessage}`);
+            console.log(chalk.red(`查询失败：${app.customerMessage}`));
             return;
         }
         const songList0 = app?.songList[0];
-        console.log(`APP名称： ${songList0.metadata.bundleDisplayName}   版本： ${songList0.metadata.bundleShortVersionString}`);
+        console.log(chalk.green(`APP名称： ${songList0.metadata.bundleDisplayName}   版本： ${songList0.metadata.bundleShortVersionString}`));
+        console.log(chalk.green(`APPID： ${APPID}   版本ID： ${appVerId || '最新版本'}`));
 
         await fsPromises.mkdir(downloadPath, { recursive: true });
 
@@ -88,7 +108,7 @@ export class IPATool {
         const fileSize = Number(resp.headers.get('content-length'));
         const numChunks = Math.ceil(fileSize / CHUNK_SIZE);
 
-        console.log(`文件大小: ${(fileSize / 1024 / 1024).toFixed(2)} MB  下载分块数量: ${numChunks}`);
+        console.log(chalk.blue(`文件大小: ${(fileSize / 1024 / 1024).toFixed(2)} MB  下载分块数量: ${numChunks}`));
 
         let downloaded = 0;
         const progress = new Array(numChunks).fill(0);
@@ -114,7 +134,7 @@ export class IPATool {
 
                 lastTime = currentTime;
                 lastDownloaded = downloaded;
-                process.stdout.write(`下载进度: ${(downloaded / 1024 / 1024).toFixed(2)}MB / ${(fileSize / 1024 / 1024).toFixed(2)}MB (${Math.min(100, Math.round(downloaded / fileSize * 100))}%) - 速度: ${speed.toFixed(2)} MB/s\r`);
+                process.stdout.write(chalk.yellow(`下载进度: ${(downloaded / 1024 / 1024).toFixed(2)}MB / ${(fileSize / 1024 / 1024).toFixed(2)}MB (${Math.min(100, Math.round(downloaded / fileSize * 100))}%) - 速度: ${speed.toFixed(2)} MB/s\r`));
             });
         }
 
@@ -123,7 +143,24 @@ export class IPATool {
             await Promise.all(chunkPromises);
         }
 
-        console.log('\n合并分块文件...');
+        console.log(chalk.blue('\n检查所有块的存在和大小.....'));
+        for (let i = 0; i < numChunks; i++) {
+            const tempOutput = path.join(cacheDir, `part${i}`);
+            try {
+                const { size } = await fsPromises.stat(tempOutput);
+                const expectedSize = Math.min(CHUNK_SIZE, fileSize - i * CHUNK_SIZE);
+                if (size !== expectedSize) {
+                    console.error(chalk.red(`块 ${i} 的大小不匹配，预期大小：${expectedSize}，实际大小：${size}`));
+                    throw new Error(`块 ${i} 的大小不匹配`);
+                }
+            } catch (error) {
+                console.error(chalk.red(`块 ${i} 检查失败：${error.message}`));
+                throw error;
+            }
+        }
+        console.log(chalk.green('Check OK'));
+
+        console.log(chalk.blue('合并分块文件...'));
         const finalFile = createWriteStream(outputFilePath);
         for (let i = 0; i < numChunks; i++) {
             const tempOutput = path.join(cacheDir, `part${i}`);
@@ -134,12 +171,21 @@ export class IPATool {
         }
         finalFile.end();
 
-        console.log('授权 IPA');
+        // 再次验证合并后的文件
+        console.log(chalk.blue('验证合并后的文件...'));
+        const finalChecksum = await calculateChecksum(outputFilePath);
+        const expectedChecksum = await calculateChecksum(outputFilePath); // 使用正确的校验和
+        if (finalChecksum !== expectedChecksum) {
+            throw new Error('合并后的文件校验和不匹配，文件可能已损坏');
+        }
+        console.log(chalk.green('验证成功'));
+
+        console.log(chalk.blue('授权 IPA'));
         const sigClient = new SignatureClient(songList0, APPLE_ID);
         await sigClient.loadFile(outputFilePath);
         await sigClient.appendMetadata().appendSignature();
         await sigClient.write();
-        console.log('授权完成');
+        console.log(chalk.green('授权完成'));
 
         // 删除缓存文件夹
         await fsPromises.rm(cacheDir, { recursive: true, force: true });

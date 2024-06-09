@@ -1,28 +1,27 @@
-// 引入 suppressWarnings.js 以忽略特定的警告
-import './suppressWarnings.js';
-import {IPATool} from './src/ipa.js';
-const ipaTool = new IPATool();
+import dotenv from 'dotenv';
+import "./src/suppressWarnings.js"; // 忽略 punycode 模块的弃用警告
+import { IPATool } from "./src/ipa.js";
 
-//如果下载完成未报错即为成功，否则请重新下载
+// 加载环境变量
+dotenv.config();
 
-await ipaTool.downipa({
+const main = async () => {
+  const ipaTool = new IPATool();
+  //如果下载完成未报错即为成功，否则请重新下载
+  await ipaTool.downipa({
     // 你想要保存文件的路径,留空为当前目录，比如当前目录下app目录【./app】
-    path: './app',
-
+    path: "./app",
     // 微信：414478124//你想要下载的应用程序的ID
-    APPID: '1662413517',
-
+    APPID: "1521205149",
     //微信8.0.48:864225682 //版本id,下载旧版本需要填写,留空默认下新版本
-    appVerId: '',
-
+    appVerId: "",
     // 你的 Apple ID 邮箱
-    APPLE_ID: 'aoole@gmail.com',
-
+    APPLE_ID: process.env.APPLE_ID,
     // 你的 Apple ID 密码
-    PASSWORD: 'Aa112233',
-
+    PASSWORD: process.env.PASSWORD,
     //两步验证代码，如果操作登录，手机弹出两步验证码，则填写到此处，第二次使用前请删除这里
-    CODE: ''
+    CODE: "",
+  });
+};
 
-});
-
+main().catch(console.error);

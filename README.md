@@ -9,8 +9,8 @@ https://github.com/beerpiss/ipatool.ts
 
 ### 用法
 
-测试环境：windows   Node.js 18.16.1
-
+~~测试环境：windows   Node.js 18.16.1~~
+*测试环境：macOS Sonoma14.5  Node.js v22.2.0*
 安装模块
 ```js
 npm i
